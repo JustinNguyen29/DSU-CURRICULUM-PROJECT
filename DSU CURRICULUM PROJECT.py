@@ -45,10 +45,12 @@ def save_spectrogram(audio_path, output_path):
         
         # Plot and save the spectrogram
         plt.figure(figsize=(10, 4))
-        librosa.display.specshow(mel_spect_db, sr=sr, x_axis='time', y_axis='mel', fmax=8000, cmap='viridis')
-        plt.colorbar(format='%+2.0f dB')
-        plt.title('Mel-Spectrogram')
-        plt.tight_layout()
+        librosa.display.specshow(mel_spect_db, sr=sr, cmap='viridis')
+
+        # Remove axes, labels, and ticks
+        plt.axis('off')
+
+        # Save the image
         plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0)
         plt.close()
     except Exception as e:
