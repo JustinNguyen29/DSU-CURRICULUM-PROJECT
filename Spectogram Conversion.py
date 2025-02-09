@@ -27,8 +27,8 @@ else:
 
 
 # Directories
-base_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Emotions Dataset Very Small"
-output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Updated Emotions Dataset Spectograms"
+base_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Emotions Dataset"
+output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/FULL Emotions Dataset Spectograms"
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
