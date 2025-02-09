@@ -1,4 +1,9 @@
 import os
+import librosa
+import librosa.display
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 
 ##### Count the number of audio files in each emotion folder ##### 
@@ -20,12 +25,10 @@ else:
         print(f"{folder}: {len(wav_files)} audio files")
 ####################################################################
 
-import librosa 
-import matplotlib.pyplot as plt
-import numpy as np
 
+# Directories
 base_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Emotions Dataset Very Small"
-output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Emotions Dataset Very Small Spectograms"
+output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Updated Emotions Dataset Spectograms"
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
@@ -34,25 +37,56 @@ if not os.path.exists(output_dir):
 folders = [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
 print("Processing emotion folders:", folders)
 
-# Function to save spectrogram
+# Constants
+TARGET_SIZE = (128, 128)  # Fixed size for CNN input
+NORMALIZE = True  # Normalize pixel values to [0,1]
+AUGMENTATION = False  # Enable time/frequency masking for augmentation
+
+# Function to apply data augmentation (time/frequency masking)
+def augment_spectrogram(mel_spect):
+    num_mels, num_frames = mel_spect.shape
+
+    # Time masking
+    for _ in range(2):  # Apply twice
+        t = np.random.randint(0, num_frames // 5)
+        t0 = np.random.randint(0, num_frames - t)
+        mel_spect[:, t0:t0 + t] = 0  # Mask time frames
+
+    # Frequency masking
+    for _ in range(2):
+        f = np.random.randint(0, num_mels // 10)
+        f0 = np.random.randint(0, num_mels - f)
+        mel_spect[f0:f0 + f, :] = 0  # Mask frequency bands
+
+    return mel_spect
+
+# Function to save a spectrogram while keeping its color
 def save_spectrogram(audio_path, output_path):
     try:
         # Load audio file
         y, sr = librosa.load(audio_path, sr=None)
-        # Create a mel-spectrogram
+        
+        # Create mel-spectrogram
         mel_spect = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=8000)
         mel_spect_db = librosa.power_to_db(mel_spect, ref=np.max)
-        
-        # Plot and save the spectrogram
-        plt.figure(figsize=(10, 4))
-        librosa.display.specshow(mel_spect_db, sr=sr, cmap='viridis')
 
-        # Remove axes, labels, and ticks
-        plt.axis('off')
+        # Apply augmentation if enabled
+        if AUGMENTATION:
+            mel_spect_db = augment_spectrogram(mel_spect_db)
 
-        # Save the image
-        plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0)
+        # Normalize to 0-1 range
+        if NORMALIZE:
+            mel_spect_db = (mel_spect_db - mel_spect_db.min()) / (mel_spect_db.max() - mel_spect_db.min())
+
+        # Plot spectrogram with color
+        plt.figure(figsize=(4, 4))  # Keep square aspect ratio
+        plt.axis("off")  # Remove axis for clean image
+        librosa.display.specshow(mel_spect_db, sr=sr, hop_length=512, cmap="viridis")
+
+        # Save image
+        plt.savefig(output_path, bbox_inches="tight", pad_inches=0)
         plt.close()
+
     except Exception as e:
         print(f"Error processing {audio_path}: {e}")
 
