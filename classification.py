@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 
 
 # # Define paths
@@ -56,8 +57,6 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
         transforms.ToTensor(),
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ]),
@@ -97,7 +96,8 @@ class EmotionCNN(nn.Module):
 
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
         )
         self.fc_layers = nn.Sequential(
             nn.Flatten(),
@@ -115,10 +115,16 @@ class EmotionCNN(nn.Module):
 # Initialize the model, loss function, and optimizer
 model = EmotionCNN(NUM_CLASSES).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 
 # Training loop
+# Training loop with metrics saving
 def train_model(model, train_loader, val_loader, criterion, optimizer, epochs=20):
+    train_losses = []
+    val_losses = []
+    train_accuracies = []
+    val_accuracies = []
+
     for epoch in range(epochs):
         model.train()
         train_loss = 0
@@ -135,6 +141,9 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, epochs=20
             train_loss += loss.item()
             train_correct += (outputs.argmax(1) == labels).sum().item()
         
+        train_losses.append(train_loss / len(train_loader))
+        train_accuracies.append(train_correct / len(train_loader.dataset))
+
         val_loss = 0
         val_correct = 0
         model.eval()
@@ -147,9 +156,22 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, epochs=20
                 val_loss += loss.item()
                 val_correct += (outputs.argmax(1) == labels).sum().item()
         
+        val_losses.append(val_loss / len(val_loader))
+        val_accuracies.append(val_correct / len(val_loader.dataset))
+
         print(f"Epoch {epoch+1}/{epochs}")
-        print(f"Train Loss: {train_loss/len(train_loader):.4f}, Train Acc: {train_correct/len(train_loader.dataset):.4f}")
-        print(f"Val Loss: {val_loss/len(val_loader):.4f}, Val Acc: {val_correct/len(val_loader.dataset):.4f}")
+        print(f"Train Loss: {train_losses[-1]:.4f}, Train Acc: {train_accuracies[-1]:.4f}")
+        print(f"Val Loss: {val_losses[-1]:.4f}, Val Acc: {val_accuracies[-1]:.4f}")
+
+    # Save metrics to a file
+    torch.save({
+        'train_losses': train_losses,
+        'val_losses': val_losses,
+        'train_accuracies': train_accuracies,
+        'val_accuracies': val_accuracies
+    }, 'metrics.pth')
+
+    print("Metrics saved to 'metrics.pth'")
 
 # Train the model
 train_model(model, train_loader, val_loader, criterion, optimizer)
@@ -169,5 +191,5 @@ def test_model(model, test_loader):
 test_model(model, test_loader)
 
 # Save the model
-torch.save(model.state_dict(), "emotion_cnn_model.pth")
+torch.save(model.state_dict(), "emotion_cnn_model_updated.pth")
 
