@@ -115,7 +115,7 @@ class EmotionCNN(nn.Module):
 # Initialize the model, loss function, and optimizer
 model = EmotionCNN(NUM_CLASSES).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3)
 
 # Training loop
 # Training loop with metrics saving
