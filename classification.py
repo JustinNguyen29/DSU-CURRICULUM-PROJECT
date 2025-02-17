@@ -9,10 +9,9 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-
 # # Define paths
-# dataset_dir = "Emotions Dataset Spectograms"
-# output_dir = "split_dataset"
+# dataset_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Full Emotions Dataset Spectrograms 228x228"
+# output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228"
 
 # # Create train, val, test directories
 # for split in ["train", "val", "test"]:
@@ -20,15 +19,19 @@ import matplotlib.pyplot as plt
 #     os.makedirs(split_path, exist_ok=True)
 
 #     for category in os.listdir(dataset_dir):
-#         os.makedirs(os.path.join(split_path, category), exist_ok=True)
+#         category_path = os.path.join(dataset_dir, category)
+#         if os.path.isdir(category_path):  # Ensure it's a directory
+#             os.makedirs(os.path.join(split_path, category), exist_ok=True)
 
 # # Split data
 # train_ratio, val_ratio, test_ratio = 0.7, 0.15, 0.15
 
 # for category in os.listdir(dataset_dir):
 #     category_path = os.path.join(dataset_dir, category)
-#     images = os.listdir(category_path)
+#     if not os.path.isdir(category_path):  # Skip non-directory files
+#         continue
     
+#     images = os.listdir(category_path)
 #     train_images, temp_images = train_test_split(images, test_size=(1 - train_ratio), random_state=42)
 #     val_images, test_images = train_test_split(temp_images, test_size=(test_ratio / (val_ratio + test_ratio)), random_state=42)
 
@@ -41,8 +44,9 @@ import matplotlib.pyplot as plt
 
 # print("Dataset split completed successfully.")
 
+
 # Paths to the dataset
-dataset_path = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset"
+dataset_path = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228"
 train_dir = f"{dataset_path}/train"
 val_dir = f"{dataset_path}/val"
 test_dir = f"{dataset_path}/test"

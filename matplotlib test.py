@@ -33,7 +33,7 @@ def load_and_plot_metrics(metrics_path):
     plt.show()
 
 # Specify the path to the metrics.pth file
-metrics_file = "metrics_resnet.pth"
+metrics_file = "metrics.pth"
 
 # Call the function to load and plot metrics
 load_and_plot_metrics(metrics_file)
