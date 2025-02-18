@@ -27,7 +27,7 @@ else:
 ####################################################################
 
 # Constants
-TARGET_SIZE = (256, 256)  # Fixed size for CNN input
+TARGET_SIZE = (224, 224)  # Fixed size for CNN input
 NORMALIZE = True  # Normalize pixel values to [0,1]
 
 def save_spectrogram(audio_path, output_path):
@@ -61,7 +61,7 @@ def save_spectrogram(audio_path, output_path):
 
 # Process audio files
 base_dir = "/Users/justinnguyen/Desktop/DSU curriculum/Emotions Dataset"
-output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/ Full Emotions Dataset Spectrograms 228x228"
+output_dir = "/Users/justinnguyen/Desktop/DSU curriculum/ Full Emotions Dataset Spectrograms 224x224"
 os.makedirs(output_dir, exist_ok=True)
 
 folders = [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]

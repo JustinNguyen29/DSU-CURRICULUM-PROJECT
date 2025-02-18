@@ -5,23 +5,25 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-import ssl
-import certifi
-
-# Image properties
-IMG_HEIGHT, IMG_WIDTH = 128, 128
-BATCH_SIZE = 32
-NUM_CLASSES = 7  # Surprised, Sad, Neutral, Happy, Fearful, Disgusted, Angry
+# Set device
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Data transforms with optional data augmentation
+# Image properties
+IMG_HEIGHT, IMG_WIDTH = 256, 256  # Updated to 256x256
+BATCH_SIZE = 32
+NUM_CLASSES = 7  # Surprised, Sad, Neutral, Happy, Fearful, Disgusted, Angry
+
+# Data transforms with enhanced augmentation
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(15),
+        transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),  # Small shifts
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),  # Color variance
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        transforms.RandomErasing(p=0.3, scale=(0.02, 0.2))  # Erase small patches
     ]),
     'val': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
@@ -35,10 +37,10 @@ data_transforms = {
     ])
 }
 
-# Paths to your data directories
-train_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset/train"
-val_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset/val"
-test_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset/test"
+# Paths to dataset
+train_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/train"
+val_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/val"
+test_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/test"
 
 # Load datasets
 train_dataset = datasets.ImageFolder(train_dir, transform=data_transforms['train'])
@@ -49,37 +51,45 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-
-# Load the pretrained ResNet-18 model
+# Load pretrained ResNet-18 model
 resnet_model = models.resnet18(pretrained=True)
 
-# Replace the fully connected (fc) layer to match your number of classes
-num_features = resnet_model.fc.in_features  # Get the number of input features to the fc layer
-resnet_model.fc = nn.Linear(num_features, NUM_CLASSES)  # Replace the fc layer
+# Freeze early layers, fine-tune last block
+for param in resnet_model.parameters():
+    param.requires_grad = False  # Freeze all layers
 
-# Move the model to the appropriate device
+for param in resnet_model.layer4.parameters():  # Unfreeze last ResNet block
+    param.requires_grad = True
+
+# Modify the fully connected layer
+num_features = resnet_model.fc.in_features
+resnet_model.fc = nn.Sequential(
+    nn.Linear(num_features, 512),
+    nn.ReLU(),
+    nn.Dropout(0.5),  # More dropout for regularization
+    nn.Linear(512, NUM_CLASSES)
+)
+
+# Move model to device
 resnet_model = resnet_model.to(DEVICE)
 
 # Loss function
 criterion = nn.CrossEntropyLoss()
 
-# Optimizer with weight decay
-optimizer = optim.Adam(resnet_model.parameters(), lr=0.001, weight_decay=1e-3)
+# Optimizer - Switched to SGD with momentum
+optimizer = optim.SGD(resnet_model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
 
+# Learning rate scheduler
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
-# TRAIN MODEL
-def train_resnet_model(
-    model, train_loader, val_loader, criterion, optimizer, epochs=20, patience=3, save_path="metrics_resnet.pth"
-):
+# Train model function
+def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, scheduler, epochs=20, patience=5):
     train_losses, val_losses = [], []
     train_accuracies, val_accuracies = [], []
-
-    # Initialize the best validation loss to a very large number
     best_val_loss = float("inf")
-    patience_counter = 0  # Counter to track patience
+    patience_counter = 0  
 
     for epoch in range(epochs):
-        # Training phase
         model.train()
         train_loss, train_correct = 0.0, 0
         for inputs, labels in train_loader:
@@ -112,54 +122,50 @@ def train_resnet_model(
         val_losses.append(val_loss / len(val_loader))
         val_accuracies.append(val_correct / len(val_loader.dataset))
 
+        # Learning rate update
+        scheduler.step()
+
         print(f"Epoch {epoch+1}/{epochs}")
         print(f"Train Loss: {train_losses[-1]:.4f}, Train Acc: {train_accuracies[-1]:.4f}")
         print(f"Val Loss: {val_losses[-1]:.4f}, Val Acc: {val_accuracies[-1]:.4f}")
 
-        # Early Stopping Logic
+        # Save metrics
+        metrics = {
+            "train_losses": train_losses,
+            "val_losses": val_losses,
+            "train_accuracies": train_accuracies,
+            "val_accuracies": val_accuracies
+        }
+        torch.save(metrics, "metrics_resnet.pth")
+
+        # Early stopping logic
         if val_losses[-1] < best_val_loss:
-            best_val_loss = val_losses[-1]  # Update the best validation loss
-            patience_counter = 0  # Reset patience counter
-            # Save the best model state
+            best_val_loss = val_losses[-1]
+            patience_counter = 0  
             torch.save(model.state_dict(), "best_resnet_model.pth")
             print(f"Best model saved at epoch {epoch+1}")
         else:
             patience_counter += 1
             print(f"Patience counter: {patience_counter}")
 
-        # If patience is exceeded, stop training
         if patience_counter >= patience:
             print("Early stopping triggered.")
             break
 
-    # Save metrics to a file
-    torch.save(
-        {
-            "train_losses": train_losses,
-            "val_losses": val_losses,
-            "train_accuracies": train_accuracies,
-            "val_accuracies": val_accuracies,
-        },
-        save_path,
-    )
-    print(f"Metrics saved to {save_path}")
-
     return train_losses, val_losses, train_accuracies, val_accuracies
 
-
-# Call training function
+# Train the model
 train_resnet_model(
     model=resnet_model,
     train_loader=train_loader,
     val_loader=val_loader,
     criterion=criterion,
     optimizer=optimizer,
-    epochs=10,
-    save_path="metrics_resnet.pth"  # Save to metrics.pth
+    scheduler=scheduler,
+    epochs=20
 )
 
-
-# evalulate model
+# Evaluate model function
 def evaluate_model(model, test_loader):
     model.eval()
     test_correct = 0
@@ -171,6 +177,10 @@ def evaluate_model(model, test_loader):
 
     test_accuracy = test_correct / len(test_loader.dataset)
     print(f"Test Accuracy: {test_accuracy:.4f}")
+    
+    # Save test accuracy to a file
+    torch.save({"test_accuracy": test_accuracy}, "test_accuracy.pth")
+    
     return test_accuracy
 
 # Evaluate the model
