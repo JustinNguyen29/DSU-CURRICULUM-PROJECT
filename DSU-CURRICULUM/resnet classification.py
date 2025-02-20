@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision import models, transforms, datasets
+from torchvision.models import ResNet18_Weights
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import matplotlib.pyplot as plt
@@ -17,13 +18,8 @@ NUM_CLASSES = 7  # Surprised, Sad, Neutral, Happy, Fearful, Disgusted, Angry
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
-        transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),  # Small shifts
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),  # Color variance
         transforms.ToTensor(),
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        transforms.RandomErasing(p=0.3, scale=(0.02, 0.2))  # Erase small patches
     ]),
     'val': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
@@ -38,9 +34,9 @@ data_transforms = {
 }
 
 # Paths to dataset
-train_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/train"
-val_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/val"
-test_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_228/test"
+train_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/train"
+val_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/val"
+test_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/test"
 
 # Load datasets
 train_dataset = datasets.ImageFolder(train_dir, transform=data_transforms['train'])
@@ -52,7 +48,7 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # Load pretrained ResNet-18 model
-resnet_model = models.resnet18(pretrained=True)
+resnet_model = models.resnet18(weights=ResNet18_Weights.DEFAULT)
 
 # Freeze early layers, fine-tune last block
 for param in resnet_model.parameters():
