@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torchvision import models, transforms, datasets
-from torchvision.models import ResNet18_Weights
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import matplotlib.pyplot as plt
@@ -9,31 +8,34 @@ import matplotlib.pyplot as plt
 # Set device
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Image properties
-IMG_HEIGHT, IMG_WIDTH = 256, 256  # Updated to 256x256
+# Image properties and batch size
+IMG_HEIGHT, IMG_WIDTH = 224, 224
 BATCH_SIZE = 32
 NUM_CLASSES = 7  # Surprised, Sad, Neutral, Happy, Fearful, Disgusted, Angry
 
-# Data transforms with enhanced augmentation
+# Data transforms with enhanced augmentation for training and ImageNet normalization
 data_transforms = {
     'train': transforms.Compose([
-        transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
+        transforms.RandomResizedCrop(IMG_HEIGHT, scale=(0.8, 1.0)),
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
     ]),
     'val': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
     ]),
     'test': transforms.Compose([
         transforms.Resize((IMG_HEIGHT, IMG_WIDTH)),
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
     ])
 }
 
-# Paths to dataset
+# Dataset paths (update if needed)
 train_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/train"
 val_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/val"
 test_dir = "/Users/justinnguyen/Desktop/DSU curriculum/split_dataset_224/test"
@@ -48,37 +50,46 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # Load pretrained ResNet-18 model
-resnet_model = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+resnet_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 
-# Freeze early layers, fine-tune last block
+# Unfreeze all layers for full fine-tuning
 for param in resnet_model.parameters():
-    param.requires_grad = False  # Freeze all layers
-
-for param in resnet_model.layer4.parameters():  # Unfreeze last ResNet block
     param.requires_grad = True
 
-# Modify the fully connected layer
+# Modify the fully connected layer: reduced dropout from 0.6 to 0.4
 num_features = resnet_model.fc.in_features
 resnet_model.fc = nn.Sequential(
     nn.Linear(num_features, 512),
     nn.ReLU(),
-    nn.Dropout(0.5),  # More dropout for regularization
+    nn.Dropout(0.4),
     nn.Linear(512, NUM_CLASSES)
 )
-
-# Move model to device
 resnet_model = resnet_model.to(DEVICE)
 
 # Loss function
 criterion = nn.CrossEntropyLoss()
 
-# Optimizer - Switched to SGD with momentum
-optimizer = optim.SGD(resnet_model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+# Group parameters for differential learning rates: lower for backbone, higher for new head layers
+backbone_params = []
+head_params = []
+for name, param in resnet_model.named_parameters():
+    if "fc" in name:
+        head_params.append(param)
+    else:
+        backbone_params.append(param)
 
-# Learning rate scheduler
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+# Use AdamW optimizer with parameter groups:
+# Backbone with lr=1e-4
+# Head with lr=1e-3
+optimizer = optim.AdamW([
+    {"params": backbone_params, "lr": 1e-4},
+    {"params": head_params, "lr": 1e-3},
+], weight_decay=1e-4)
 
-# Train model function
+# Cosine annealing learning rate scheduler
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20, eta_min=1e-6)
+
+# Train model function with early stopping
 def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, scheduler, epochs=20, patience=5):
     train_losses, val_losses = [], []
     train_accuracies, val_accuracies = [], []
@@ -90,20 +101,19 @@ def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, sc
         train_loss, train_correct = 0.0, 0
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
-
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
             train_loss += loss.item()
             train_correct += (outputs.argmax(1) == labels).sum().item()
 
-        train_losses.append(train_loss / len(train_loader))
-        train_accuracies.append(train_correct / len(train_loader.dataset))
+        avg_train_loss = train_loss / len(train_loader)
+        avg_train_acc = train_correct / len(train_loader.dataset)
+        train_losses.append(avg_train_loss)
+        train_accuracies.append(avg_train_acc)
 
-        # Validation phase
         model.eval()
         val_loss, val_correct = 0.0, 0
         with torch.no_grad():
@@ -111,19 +121,19 @@ def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, sc
                 inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
-
                 val_loss += loss.item()
                 val_correct += (outputs.argmax(1) == labels).sum().item()
 
-        val_losses.append(val_loss / len(val_loader))
-        val_accuracies.append(val_correct / len(val_loader.dataset))
+        avg_val_loss = val_loss / len(val_loader)
+        avg_val_acc = val_correct / len(val_loader.dataset)
+        val_losses.append(avg_val_loss)
+        val_accuracies.append(avg_val_acc)
 
-        # Learning rate update
         scheduler.step()
 
         print(f"Epoch {epoch+1}/{epochs}")
-        print(f"Train Loss: {train_losses[-1]:.4f}, Train Acc: {train_accuracies[-1]:.4f}")
-        print(f"Val Loss: {val_losses[-1]:.4f}, Val Acc: {val_accuracies[-1]:.4f}")
+        print(f"Train Loss: {avg_train_loss:.4f}, Train Acc: {avg_train_acc:.4f}")
+        print(f"Val Loss: {avg_val_loss:.4f}, Val Acc: {avg_val_acc:.4f}")
 
         # Save metrics
         metrics = {
@@ -134,9 +144,9 @@ def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, sc
         }
         torch.save(metrics, "metrics_resnet.pth")
 
-        # Early stopping logic
-        if val_losses[-1] < best_val_loss:
-            best_val_loss = val_losses[-1]
+        # Early stopping check
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
             patience_counter = 0  
             torch.save(model.state_dict(), "best_resnet_model.pth")
             print(f"Best model saved at epoch {epoch+1}")
@@ -150,17 +160,6 @@ def train_resnet_model(model, train_loader, val_loader, criterion, optimizer, sc
 
     return train_losses, val_losses, train_accuracies, val_accuracies
 
-# Train the model
-train_resnet_model(
-    model=resnet_model,
-    train_loader=train_loader,
-    val_loader=val_loader,
-    criterion=criterion,
-    optimizer=optimizer,
-    scheduler=scheduler,
-    epochs=20
-)
-
 # Evaluate model function
 def evaluate_model(model, test_loader):
     model.eval()
@@ -173,11 +172,20 @@ def evaluate_model(model, test_loader):
 
     test_accuracy = test_correct / len(test_loader.dataset)
     print(f"Test Accuracy: {test_accuracy:.4f}")
-    
-    # Save test accuracy to a file
     torch.save({"test_accuracy": test_accuracy}, "test_accuracy.pth")
-    
     return test_accuracy
+
+# Train the model
+train_resnet_model(
+    model=resnet_model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    criterion=criterion,
+    optimizer=optimizer,
+    scheduler=scheduler,
+    epochs=20,
+    patience=5
+)
 
 # Evaluate the model
 test_accuracy = evaluate_model(resnet_model, test_loader)
